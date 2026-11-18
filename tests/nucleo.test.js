@@ -13,10 +13,10 @@ function servidorFalso() {
     if (!s.sesionOk) return res({ ok: false, e: 'Error: SESION_EXPIRADA' });
     if (fn === 'api_productos') return res({ ok: true, r: { productos: Object.keys(s.stock).map(n => ({ nombre: n, disponible: s.stock[n], unidad: 'Unidad' })), redondeo: 50 } });
     if (fn === 'api_venta') {
-      const [, items, medio, ef, nota, id, ts] = args;
+      const [, items, medio, ef, nota, extra, id, ts] = args;
       if (items.some(i => !(i.producto in s.stock))) return res({ ok: false, e: 'Error: Producto no encontrado: ' + items[0].producto });
       const dup = id && s.ids.has(id);
-      if (!dup) { if (id) s.ids.add(id); items.forEach(i => { s.stock[i.producto] -= i.cantidad; s.ventas.push({ id, ts, medio, total: i.total, producto: i.producto }); }); }
+      if (!dup) { if (id) s.ids.add(id); items.forEach(i => { s.stock[i.producto] -= i.cantidad; s.ventas.push({ id, ts, medio, total: i.total, producto: i.producto, extra }); }); }
       return res({ ok: true, r: { productos: Object.keys(s.stock).map(n => ({ nombre: n, disponible: s.stock[n], unidad: 'Unidad' })), esPendiente: false, duplicada: !!dup } });
     }
     if (fn === 'api_ventasDia') return res({ ok: true, r: { n: s.ventas.length } });
@@ -76,8 +76,8 @@ async function prueba(nombre, fn) { try { await fn(); hechas++; console.log('  o
   await prueba('reintento con la misma clave: el servidor no duplica', async () => {
     const s = servidorFalso(); const { nuc } = hacer(s); await nuc.cargar();
     await nuc.ejecutar('api_login', ['sandra', 'x']);
-    await s.fetch('x', { body: JSON.stringify({ fn: 'api_venta', args: ['T1', ITEMS, 'Efectivo', 0, '', 'igual', 't'] }) });
-    await s.fetch('x', { body: JSON.stringify({ fn: 'api_venta', args: ['T1', ITEMS, 'Efectivo', 0, '', 'igual', 't'] }) });
+    await s.fetch('x', { body: JSON.stringify({ fn: 'api_venta', args: ['T1', ITEMS, 'Efectivo', 0, '', null, 'igual', 't'] }) });
+    await s.fetch('x', { body: JSON.stringify({ fn: 'api_venta', args: ['T1', ITEMS, 'Efectivo', 0, '', null, 'igual', 't'] }) });
     assert.strictEqual(s.ventas.length, 1);
   });
 
@@ -144,6 +144,15 @@ async function prueba(nombre, fn) { try { await fn(); hechas++; console.log('  o
     poner(false);
     const info = await nuc.ejecutar('api_sesion', ['T1']); assert.strictEqual(info.usuario, 'sandra');
     await assert.rejects(() => nuc.ejecutar('api_sesion', ['otro']), /Sin conexión/);
+  });
+
+  await prueba('cliente, puntos y propina viajan con la venta guardada', async () => {
+    const s = servidorFalso(); const { nuc, poner } = hacer(s); await nuc.cargar();
+    await nuc.ejecutar('api_login', ['sandra', 'x']); await nuc.ejecutar('api_productos', ['T1']);
+    const extra = { cliente: '3001234567', puntos: 100, propina: 500 };
+    poner(false); await nuc.ejecutar('api_venta', ['T1', ITEMS, 'Efectivo', 0, '', extra]);
+    poner(true); await nuc.enviarCola();
+    assert.deepStrictEqual(s.ventas[0].extra, extra);
   });
 
   await prueba('solo se permiten funciones api_', async () => {

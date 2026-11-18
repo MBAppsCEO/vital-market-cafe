@@ -107,8 +107,9 @@
     }
 
     function venta(args) {
-      var item = { id: o.uuid(), ts: o.ahora().toISOString(), usuario: est.usuario || '', items: args[1], medio: args[2], ef: args[3], nota: args[4] };
-      var completa = [args[0], item.items, item.medio, item.ef, item.nota, item.id, item.ts];
+      /* args: [token, items, medio, efectivo, nota, extra]  (extra = cliente, puntos y propina de la versión 3.11) */
+      var item = { id: o.uuid(), ts: o.ahora().toISOString(), usuario: est.usuario || '', items: args[1], medio: args[2], ef: args[3], nota: args[4], extra: args[5] === undefined ? null : args[5] };
+      var completa = [args[0], item.items, item.medio, item.ef, item.nota, item.extra, item.id, item.ts];
       if (!o.enLinea()) return encolar(item);
       return post('api_venta', completa, 40000).then(function (r) {
         if (r && r.productos) { est.productos = { productos: copiar(r.productos), redondeo: est.productos ? est.productos.redondeo : 50 }; guardar('productos', est.productos); }
@@ -134,14 +135,14 @@
         est.bloqueado = '';
         var token = o.leerToken();
         if (!token) { est.sesionVencida = true; return Promise.resolve(); }
-        return post('api_venta', [token, c.items, c.medio, c.ef, c.nota, c.id, c.ts], 60000).then(function () {
+        return post('api_venta', [token, c.items, c.medio, c.ef, c.nota, c.extra === undefined ? null : c.extra, c.id, c.ts], 60000).then(function () {
           est.cola.shift(); est.aviso = '';
           return guardar('cola', est.cola).then(siguiente);
         }, function (e) {
           if (e.red) return Promise.resolve();
           if (/SESION_EXPIRADA/.test(e.message)) { est.sesionVencida = true; return Promise.resolve(); }
           est.cola.shift();
-          est.fallidas.push({ id: c.id, ts: c.ts, usuario: c.usuario, medio: c.medio, total: totalItems(c.items), items: c.items, motivo: e.message });
+          est.fallidas.push({ id: c.id, ts: c.ts, usuario: c.usuario, medio: c.medio, ef: c.ef, nota: c.nota, extra: c.extra === undefined ? null : c.extra, total: totalItems(c.items), items: c.items, motivo: e.message });
           return Promise.all([guardar('cola', est.cola), guardar('fallidas', est.fallidas)]).then(siguiente);
         });
       }
@@ -186,7 +187,7 @@
     function reintentarFallida(id) {
       var f = est.fallidas.filter(function (x) { return x.id === id; })[0]; if (!f) return Promise.resolve();
       est.fallidas = est.fallidas.filter(function (x) { return x.id !== id; });
-      est.cola.push({ id: f.id, ts: f.ts, usuario: f.usuario, items: f.items, medio: f.medio, ef: f.ef, nota: f.nota });
+      est.cola.push({ id: f.id, ts: f.ts, usuario: f.usuario, items: f.items, medio: f.medio, ef: f.ef, nota: f.nota, extra: f.extra === undefined ? null : f.extra });
       return Promise.all([guardar('cola', est.cola), guardar('fallidas', est.fallidas)]).then(function () { avisar(); return enviarCola(); });
     }
     function guardarBundle(b) { est.bundle = b; return guardar('bundle', b); }
